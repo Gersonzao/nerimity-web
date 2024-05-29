@@ -28,6 +28,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: contain;
+  -webkit-touch-callout: none;
+}
+
+#root.mobileAgent {
+  -webkit-user-select: none;
 }
 
 textarea {

@@ -10,6 +10,9 @@ import { useParams } from "solid-navigator";
 import { t } from "i18next";
 import { createEffect, Match, onMount, Show, Switch } from "solid-js";
 import { styled } from "solid-styled-components";
+import Button from "@/components/ui/Button";
+import { CreateTicketModal } from "@/components/profile-pane/ProfilePane";
+import { useCustomPortal } from "@/components/ui/custom-portal/CustomPortal";
 
 const Container = styled("div")`
   display: flex;
@@ -24,6 +27,7 @@ const ListContainer = styled(FlexColumn)`
 export default function ServerSettingsBans() {
   const params = useParams<{ serverId: string }>();
   const { servers, serverMembers, header } = useStore();
+  const { createPortal } = useCustomPortal();
 
   createEffect(() => {
     header.updateHeader({
@@ -32,12 +36,21 @@ export default function ServerSettingsBans() {
       iconName: "settings"
     });
   });
-  const TARGET_MEMBERS = 10;
+  const TARGET_MEMBERS = 20;
   const server = () => servers.get(params.serverId);
   const isVerified = () => server()?.verified;
   const memberCount = () => serverMembers.array(params.serverId).length;
 
   const membersNeeded = () => TARGET_MEMBERS - memberCount();
+
+  const verifyClick = () => {
+    return createPortal((close) => (
+      <CreateTicketModal
+        close={close}
+        ticket={{ id: "SERVER_VERIFICATION" }}
+      />
+    ));
+  };
 
   return (
     <Container>
@@ -54,13 +67,14 @@ export default function ServerSettingsBans() {
           <Notice type="warn" description={`You need ${membersNeeded()} more member(s) to apply for a verification.`} />
         </Match>
         <Match when={membersNeeded() <= 0}>
-          <Notice type="success" description={"You have enough members to verify your server!"} />
+          <Notice type="success" description={"You have enough members to verify your server!"} children={<Button onClick={verifyClick} label="Verify" styles={{"margin-left": "auto"}} margin={0} color="var(--success-color)" />} />
         </Match>
       </Switch>
       <ListContainer>
         <Text size={24} style={{ "margin-bottom": "10px" }}>Requirements</Text>
-        <SettingsBlock icon="people" label="10 or more members" description="Your server must have 10 or more members." />
+        <SettingsBlock icon="people" label="10 or more members" description={`Your server must have at least ${TARGET_MEMBERS} members.`} />
         <SettingsBlock icon="cleaning_services" label="Profanity free" description="Server name, avatar and banner should be profanity free." />
+        <SettingsBlock icon="landscape" label="Server rules" description="Server should have an avatar and a banner." />
         <SettingsBlock icon="gavel" label="Server rules" description="Server should have a rules channel." />
       </ListContainer>
       <ListContainer>

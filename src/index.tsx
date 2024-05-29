@@ -47,6 +47,7 @@ const LoginPage = lazy(() => import("./pages/LoginPage"));
 const AppPage = lazy(() => import("./pages/AppPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const InviteServerBotPage = lazy(() => import("./pages/InviteServerBot"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const TermsAndConditionsPage = lazy(() => import("./pages/TermsAndConditionsPage"));
 const GoogleRedirectLinkAccount = lazy(() => import("./pages/GoogleRedirectLinkAccountPage"));
 
@@ -96,6 +97,9 @@ const useMobileInterface = () => {
     `;
     document.head.appendChild(styleEl);
   }
+  if (isMobileAgent()) {
+    document.getElementById("root")?.classList.add("mobileAgent");
+  }
 };
 
 
@@ -139,7 +143,7 @@ render(() => {
           <Route path="/*" components={{settingsPane: undefined}}  />
         </Route>
 
-        <Route path="/profile/:userId" components={{mainPane: ProfilePane, leftDrawer: undefined, rightDrawer: undefined}} />
+        <Route path="/profile/:userId/:tab?" components={{mainPane: ProfilePane, leftDrawer: undefined, rightDrawer: undefined}} />
 
         <Route path="/explore" components={{mainPane: ExplorePane, leftDrawer: ExploreDrawer}}>
           <For each={exploreRoutes}>
@@ -179,7 +183,9 @@ render(() => {
       <Route path="/terms-and-conditions" component={TermsAndConditionsPage} /> 
       <Route path="/google-redirect" component={GoogleRedirectLinkAccount} /> 
       <Route path="/i/:inviteId" component={InviteRedirect} />
+      <Route path="/p/:postId" component={PostRedirect} />
       <Route path="/bot/:appId" component={InviteServerBotPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       
       <Route path="/*" component={NoMatch} />
     </Router>
@@ -205,5 +211,11 @@ function InviteRedirect() {
   const params = useParams();
 
   return <Navigate href={RouterEndpoints.EXPLORE_SERVER_INVITE(params.inviteId!)} />;
+}
+
+function PostRedirect() {
+  const params = useParams();
+
+  return <Navigate href={`/app?postId=${params.postId!}`} />;
 }
 

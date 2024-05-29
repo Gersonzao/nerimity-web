@@ -1,5 +1,5 @@
 import styles from "./styles.module.scss";
-import {A, useNavigate, useParams} from "solid-navigator";
+import {A, useNavigate, useParams, useSearchParams} from "solid-navigator";
 import {createEffect, createSignal, For, on, onCleanup, onMount, Show} from "solid-js";
 import {FriendStatus, RawUser, TicketCategory} from "@/chat-api/RawData";
 import {
@@ -201,18 +201,18 @@ export default function ProfilePane() {
                   <Badges user={userDetails()!} />
                 </Show>
                 <div class={styles.followingAndFollowersContainer}>
-                  <div>
+                  <CustomLink href={RouterEndpoints.PROFILE(user()!.id + "/following")}>
                     {userDetails()?.user._count.following.toLocaleString()}{" "}
                     <span style={{ color: "rgba(255, 255, 255, 0.6)" }}>
                       Following
                     </span>
-                  </div>
-                  <div>
+                  </CustomLink>
+                  <CustomLink href={RouterEndpoints.PROFILE(user()!.id + "/followers")}>
                     {userDetails()?.user._count.followers.toLocaleString()}{" "}
                     <span style={{ color: "rgba(255, 255, 255, 0.6)" }}>
                       Followers
                     </span>
-                  </div>
+                  </CustomLink>
                 </div>
               </div>
 
@@ -480,23 +480,30 @@ function ProfileContextMenu(props: Omit<ContextMenuProps, "items">) {
 interface AbuseTicket {
   id: "ABUSE";
   userId: string;
+  messageId?: string
+}
+interface VerifyServerTicket {
+  id: "SERVER_VERIFICATION"
 }
 
-type Ticket = AbuseTicket;
+type Ticket = AbuseTicket | VerifyServerTicket;
 
 export function CreateTicketModal(props: { close: () => void; ticket?: Ticket }) {
   const navigate = useNavigate();
-  const [selectedCategoryId, setSelectedCategoryId] = createSignal(props.ticket ? "ABUSE" : "SELECT");
-  const [userIds, setUserIds] = createSignal(props.ticket?.userId || "");
+  const [selectedCategoryId, setSelectedCategoryId] = createSignal(props.ticket?.id || "SELECT");
+  const [userIds, setUserIds] = createSignal(props.ticket?.id === "ABUSE" ? (props.ticket.userId || "") : "");
+  const [messageIds, setMessageIds] = createSignal(props.ticket?.id === "ABUSE" ? (props.ticket.messageId || "") : "");
   const [title, setTitle] = createSignal("");
   const [body, setBody] = createSignal("");
   const [error, setError] = createSignal<null | string>(null);
+  const [serverInviteUrl, setServerInviteUrl] = createSignal<string>("");
 
   const Categories: DropDownItem[] = [
+    { id: "SERVER_VERIFICATION", label: "Verify Server" },
     { id: "QUESTION", label: "Question" },
     { id: "ACCOUNT", label: "Account" },
     { id: "ABUSE", label: "Abuse" },
-    { id: "OTHER", label: "Other" }
+    { id: "OTHER", label: "Other" },
   ];
 
   const createTicketClick = async () => {
@@ -514,6 +521,7 @@ export function CreateTicketModal(props: { close: () => void; ticket?: Ticket })
 
     if (selectedCategoryId() !== "ABUSE") {
       setUserIds("");
+      setMessageIds("");
     }
 
     let customBody = body();
@@ -522,6 +530,14 @@ export function CreateTicketModal(props: { close: () => void; ticket?: Ticket })
       const userIdsWithoutSpace = userIds().replace(/\s/g, "");
       const userIdsSplit = userIdsWithoutSpace.split(",");
       customBody = `User(s) to report:${userIdsSplit.map(id => ` [@:${id}]`)}\n\n${customBody}`;
+    }
+    if (messageIds()) {
+      customBody += `\n\nMessage(s) to report:\n${messageIds().replace(/\s/g, "").split(",").map(id => `[q:${id}]`).join("")}\n\n`;
+    }
+
+    if (selectedCategoryId() === "SERVER_VERIFICATION") {
+      customBody = `Server Invite URL: ${serverInviteUrl()}\n\nExcited For:\n${customBody}`
+      setTitle("Server Verification");
     }
 
     const ticket = await createTicket({
@@ -586,10 +602,25 @@ export function CreateTicketModal(props: { close: () => void; ticket?: Ticket })
               value={userIds()}
               onText={setUserIds}
             />
+            <Input
+              label="Message ID(s) to report (separated by comma)"
+              value={messageIds()}
+              onText={setMessageIds}
+            />
           </Show>
 
+       <Show when={["ABUSE", "OTHER", "ACCOUNT", "QUESTION"].includes(selectedCategoryId())}>
           <Input label="In one short sentence, what is the problem?" value={title()} onText={setTitle} />
           <Input label="Describe the problem" type="textarea" minHeight={100} value={body()} onText={setBody} />
+       </Show>
+       <Show when={selectedCategoryId() === "SERVER_VERIFICATION"}>
+          <Notice
+            type="info"
+            description="Make sure you meet all the requirements in your server settings verify page."
+          />
+          <Input label="Server Invite URL" placeholder="https://nerimity.com/i/xxxxxxxxxx" value={serverInviteUrl()} onText={setServerInviteUrl} />
+          <Input label="Which verify perk are you most excited for?" type="textarea" minHeight={100} value={body()} onText={setBody} />
+       </Show>
           <Show when={error()}>
             <Text color="var(--alert-color)">{error()}</Text>
           </Show>
@@ -631,13 +662,20 @@ function SideBar(props: { user: UserDetails }) {
 
   return (
     <div class={styles.sidePane}>
+      <Show when={props.user.suspensionExpiresAt !== undefined}>
+        <SidePaneItem
+          icon="block"
+          label="This user is suspended"
+          color="var(--alert-color)"
+          value={`Expires ${!props.user.suspensionExpiresAt ? "never" :getDaysAgo(props.user.suspensionExpiresAt!)}`}
+        />
+      </Show>
       <Show when={props.user.block}>
         <SidePaneItem
           icon="block"
           label="You've been blocked"
           color="var(--alert-color)"
           value="This user has blocked you."
-          onClick={() => setToggleJoinedDateType(!toggleJoinedDateType())}
         />
       </Show>
       <UserActivity userId={props.user.user.id} />
@@ -856,10 +894,48 @@ function SidePaneItem(props: {
 
 function PostsContainer(props: { user: UserDetails }) {
   const { account } = useStore();
-  const [currentPage, setCurrentPage] = createSignal(0); // posts | with replies | liked | Following | Followers
+  const navigate = useNavigate();
+  const params = useParams<{tab?: "replies" | "liked" | "following" | "followers"}>()
 
   const postCount = () => props.user.user._count.posts.toLocaleString();
   const likeCount = () => props.user.user._count.likedPosts.toLocaleString();
+
+
+
+  const currentPage = () => {
+    switch (params.tab) {
+      case "replies":
+        return 1;
+      case "liked":
+        return 2;
+      case "following":
+        return 3;
+      case "followers":
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
+  const setCurrentPage = (page: number) => {
+    switch (page) {
+      case 1:
+        navigate(RouterEndpoints.PROFILE(props.user.user.id) + "/replies");
+        break;
+      case 2:
+        navigate(RouterEndpoints.PROFILE(props.user.user.id) + "/liked");
+        break;
+      case 3:
+        navigate(RouterEndpoints.PROFILE(props.user.user.id) + "/following");
+        break;
+      case 4:
+        navigate(RouterEndpoints.PROFILE(props.user.user.id) + "/followers");
+        break;
+      default:
+        navigate(RouterEndpoints.PROFILE(props.user.user.id));
+    }
+  }
+
   return (
     <div class={styles.postsContainer}>
       <FlexRow gap={5} style={{ "margin-bottom": "10px", "flex-wrap": "wrap" }}>

@@ -73,7 +73,6 @@ import { PhotoEditor } from "./ui/photo-editor/PhotoEditor";
 const NewPostContainer = styled(FlexColumn)`
   padding-bottom: 5px;
   background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 2px 0 rgba(0, 0, 0, 0.4);
   padding-left: 10px;
   padding-right: 10px;
   padding-bottom: 10px;
@@ -182,8 +181,8 @@ function NewPostArea(props: { postId?: string }) {
       <Input
         maxLength={500}
         margin={[0, 0, 10, 0]}
-        onBlur={() => setInputFocused(false)}
-        onFocus={() => setInputFocused(true)}
+        onBlur={() => setTimeout(() => setInputFocused(false), 100)}
+        onFocus={() => setTimeout(() => setInputFocused(true), 100)}
         minHeight={hasContentOrFocused() ? 60: undefined}
 
         
@@ -366,7 +365,6 @@ const PostOuterContainer = styled(FlexColumn)`
 
   border-radius: 8px;
 
-  box-shadow: 0 0 2px 0 rgba(0, 0, 0, 0.4);
   background: rgba(255, 255, 255, 0.06);
   &:hover {
     background: rgba(255, 255, 255, 0.07);
@@ -602,6 +600,10 @@ const Actions = (props: { post: Post; hideDelete?: boolean }) => {
         class={postActionStyle}
         color="var(--alert-color)"
         primary={!!isLikedByMe()}
+        iconClass={!isLikedByMe() ? css`
+          -webkit-text-fill-color: transparent;
+          -webkit-text-stroke: 1px;
+        ` : undefined}
         iconName={likedIcon()}
         label={props.post._count?.likedBy.toLocaleString()}
       />

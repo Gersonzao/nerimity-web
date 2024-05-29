@@ -1,44 +1,32 @@
 import styles from "./styles.module.scss";
 import Avatar from "@/components/ui/Avatar";
 import UserPresence from "@/components/user-presence/UserPresence";
-import {Link, useParams} from "solid-navigator";
+import {useParams} from "solid-navigator";
 import useStore from "@/chat-api/store/useStore";
 import {createEffect, createMemo, createSignal, For, JSX, mapArray, on, onCleanup, onMount, Show} from "solid-js";
 import {ServerMember} from "@/chat-api/store/useServerMembers";
-import MemberContextMenu, {ServerMemberRoleModal} from "../member-context-menu/MemberContextMenu";
+import MemberContextMenu from "../member-context-menu/MemberContextMenu";
 import {DrawerHeader} from "@/components/drawer-header/DrawerHeader";
 import {useCustomPortal} from "@/components/ui/custom-portal/CustomPortal";
-import {css, styled} from "solid-styled-components";
+import {css} from "solid-styled-components";
 import {bannerUrl} from "@/chat-api/store/useUsers";
 import Text from "@/components/ui/Text";
-import {FlexColumn, FlexRow} from "@/components/ui/Flexbox";
-import {getUserDetailsRequest, UserDetails} from "@/chat-api/services/UserService";
-import {PostItem} from "@/components/PostsArea";
 import Icon from "@/components/ui/icon/Icon";
-import {useWindowProperties} from "@/common/useWindowProperties";
-import Modal from "@/components/ui/modal/Modal";
 import Button from "@/components/ui/Button";
-import RouterEndpoints from "@/common/RouterEndpoints";
-import {CustomLink} from "@/components/ui/CustomLink";
 import {Banner} from "@/components/ui/Banner";
 import {fetchChannelAttachments} from "@/chat-api/services/MessageService";
 import {RawAttachment, RawMessage} from "@/chat-api/RawData";
 import env from "@/common/env";
-import {ImagePreviewModal} from "@/components/ui/ImageEmbed";
 import {classNames, conditionalClass} from "@/common/classNames";
 import socketClient from "@/chat-api/socketClient";
 import {ServerEvents} from "@/chat-api/EventNames";
-import {Markup} from "../Markup";
-import {useResizeObserver} from "@/common/useResizeObserver";
-import {electronWindowAPI} from "@/common/Electron";
-import {calculateTimeElapsedForActivityStatus} from "@/common/date";
 import { emitScrollToMessage } from "@/common/GlobalEvents";
 import { Skeleton } from "../ui/skeleton/Skeleton";
-import { useDrawer } from "../ui/drawer/Drawer";
 import { ProfileFlyout } from "../floating-profile/FloatingProfile";
 import { Delay } from "@/common/Delay";
 import { getCachedNotice } from "@/common/useChannelNotice";
 import { Emoji } from "../ui/Emoji";
+import { Markup } from "../Markup";
 
 const MemberItem = (props: { member: ServerMember }) => {
   const params = useParams<{ serverId: string }>();
@@ -46,7 +34,6 @@ const MemberItem = (props: { member: ServerMember }) => {
   let elementRef: undefined | HTMLDivElement;
   const [contextPosition, setContextPosition] = createSignal<{ x: number, y: number } | undefined>(undefined);
   const [hovering, setHovering] = createSignal(false);
-  const { isMobileWidth } = useWindowProperties();
   const { createPortal, isPortalOpened } = useCustomPortal();
 
   const isProfileFlyoutOpened = () => {
@@ -89,7 +76,7 @@ const RightDrawer = () => {
   const params = useParams<{ serverId?: string; channelId?: string; }>();
   const [showAttachments, setShowAttachments] = createSignal(false);
 
-  createEffect(on([() => params.channelId], (now, prev) => {
+  createEffect(on(() => params.channelId, () => {
     setShowAttachments(false);
   }));
 
@@ -227,7 +214,7 @@ const AttachmentImage = (props: { attachment: RawAttachment }) => {
 
 const MainDrawer = (props: { onShowAttachmentClick(): void }) => {
   const params = useParams<{ serverId?: string; channelId?: string; }>();
-  const { channels, servers } = useStore();
+  const { channels } = useStore();
 
 
   const channel = () => channels.get(params.channelId!);
@@ -259,20 +246,30 @@ const MainDrawer = (props: { onShowAttachmentClick(): void }) => {
   socketClient.useSocketOn(ServerEvents.MESSAGE_DELETED, onDelete);
 
 
+  const cachedNotice = () => params.channelId ? getCachedNotice(() => params.channelId!) : undefined;
+
   return <>
-    <ChannelNotice/>
-    <Show when={!channel()?.recipientId}><BannerItem /></Show>
+    <Show when={channel()?.serverId}><BannerItem /></Show>
+    <Show when={channel()?.serverId}>
+      <ServerChannelNotice/>
+    </Show>
     <Show when={channel()?.recipientId}>
-      <ProfileFlyout dmPane userId={channel()?.recipientId!} />
+      <ProfileFlyout channelNotice={cachedNotice()?.content} dmPane userId={channel()?.recipientId!} />
     </Show>
     <Show when={channel()}>
       <Button
-        label={`Attachments (${channel()?._count?.attachments ?? "..."})`}
-        customChildren={<Icon class={css`margin-left: auto;`} size={16} name='navigate_next' />}
+        label="Attachments"
+        customChildren={
+          <>
+            <div class={styles.attachmentCount}>{channel()?._count?.attachments?.toLocaleString?.() ?? "..."}</div>
+            <Icon size={16} color="var(--primary-color)" name='navigate_next' />
+          </>
+        }
         iconName='attach_file'
         iconSize={16}
         onClick={props.onShowAttachmentClick}
         class={css`justify-content: start;`}
+        
         padding={5} />
     </Show>
     <Show when={params.serverId}><ServerDrawer /></Show>
@@ -325,17 +322,22 @@ const ServerDrawer = () => {
     <Show when={server()?.id} keyed={true}>
       <Delay ms={10}>
         <>
-          <Text style={{ "margin-left": "10px" }}>Members ({members().length})</Text>
-          <For each={roleMembers()}>
-            {item => (
-              <Show when={!item.role!.hideRole && item.members().length}>
-                <RoleItem members={item.members().sort((a, b) => a?.user().username.localeCompare(b?.user().username))} roleName={item.role?.name!} roleIcon={item.role?.icon!} />
-              </Show>
-            )}
-          </For>
+          <div style={{ "margin-left": "8px", display: "flex" }}>
+            <Text size={14}>Members</Text>
+            <div class={styles.memberCount}>{members().length.toLocaleString()}</div>
+          </div>
+          <div class={styles.roleContainer}>
+            <For each={roleMembers()}>
+              {(item) => (
+                <Show when={!item.role!.hideRole && item.members().length}>
+                  <RoleItem members={item.members().sort((a, b) => a?.user().username.localeCompare(b?.user().username))} roleName={item.role?.name!} roleIcon={item.role?.icon!} />
+                </Show>
+              )}
+            </For>
 
-          {/* Offline */}
-          <RoleItem members={offlineMembers().sort((a, b) => a?.user().username.localeCompare(b?.user().username))} roleName="Offline" roleIcon={defaultRole()?.icon} />
+            {/* Offline */}
+            <RoleItem members={offlineMembers().sort((a, b) => a?.user().username.localeCompare(b?.user().username))} roleName="Offline" roleIcon={defaultRole()?.icon} />
+          </div>
         </>
       </Delay>
 
@@ -363,7 +365,8 @@ function RoleItem(props: { roleName: string, members: ServerMember[], roleIcon?:
 }
 
 
-const ChannelNotice = () => {
+
+const ServerChannelNotice = () => {
   const params = useParams<{ channelId: string }>();
 
   const cachedNotice = () => getCachedNotice(() => params.channelId);
@@ -380,8 +383,6 @@ const ChannelNotice = () => {
     </Show>
   );
 };
-
-
 
 export default RightDrawer;
 
